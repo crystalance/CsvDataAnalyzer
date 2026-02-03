@@ -22,7 +22,7 @@ def load_csv(file) -> tuple[pd.DataFrame | None, str]:
     global analyzer
 
     if file is None:
-        return None, "请上传 CSV 文件"
+        return None, "请上传 CSV"
 
     try:
         file_path = file.name if hasattr(file, 'name') else str(file)
@@ -31,7 +31,7 @@ def load_csv(file) -> tuple[pd.DataFrame | None, str]:
         return preview, f"已加载: {Path(file_path).name}"
 
     except Exception as e:
-        return None, f"加载失败: {str(e)}"
+        return None, f"失败: {str(e)}"
 
 
 def switch_model(model: str) -> str:
@@ -39,7 +39,7 @@ def switch_model(model: str) -> str:
     global analyzer
 
     if analyzer is None:
-        return "请先上传 CSV 文件"
+        return "请先上传 CSV"
 
     try:
         analyzer.switch_model(model)
@@ -114,28 +114,12 @@ def analyze(
         return history, None, ""
 
 
-def clear_history() -> tuple[list, None]:
-    """Clear conversation history."""
-    global analyzer
-
-    if analyzer:
-        analyzer.new_conversation()
-
-    return [], None
-
-
-def save_history(history: list, save_name: str) -> str:
-    """Save conversation history to a JSON file."""
+def save_history(history: list) -> gr.update:
+    """Auto-save conversation history with timestamp."""
     if not history:
-        return "没有对话可保存"
+        return gr.update(choices=get_history_files())
 
-    if not save_name.strip():
-        save_name = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    save_name = save_name.strip().replace(" ", "_")
-    if not save_name.endswith(".json"):
-        save_name += ".json"
-
+    save_name = datetime.now().strftime("%Y%m%d_%H%M%S") + ".json"
     file_path = HISTORY_DIR / save_name
 
     try:
@@ -144,26 +128,26 @@ def save_history(history: list, save_name: str) -> str:
                 "timestamp": datetime.now().isoformat(),
                 "history": history
             }, f, ensure_ascii=False, indent=2)
-        return f"已保存: {save_name}"
+        return gr.update(choices=get_history_files(), value=save_name.replace(".json", ""))
     except Exception as e:
-        return f"保存失败: {str(e)}"
+        return gr.update(choices=get_history_files())
 
 
 def get_history_files() -> list:
     """Get list of saved history files."""
     files = list(HISTORY_DIR.glob("*.json"))
     files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-    return [f.name for f in files]
+    return [f.stem for f in files]
 
 
-def load_history(filename: str) -> tuple[list, str]:
+def load_history(filename: str) -> list:
     """Load conversation history from a JSON file."""
     global analyzer
 
     if not filename:
-        return [], "请选择历史记录"
+        return []
 
-    file_path = HISTORY_DIR / filename
+    file_path = HISTORY_DIR / f"{filename}.json"
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -174,14 +158,33 @@ def load_history(filename: str) -> tuple[list, str]:
         if analyzer:
             analyzer.new_conversation()
 
-        return history, f"已加载: {filename}"
-    except Exception as e:
-        return [], f"加载失败: {str(e)}"
+        return history
+    except Exception:
+        return []
 
 
-def refresh_history_list() -> gr.update:
-    """Refresh the history file dropdown."""
-    return gr.update(choices=get_history_files())
+def delete_history(filename: str) -> gr.update:
+    """Delete a history file."""
+    if not filename:
+        return gr.update()
+
+    file_path = HISTORY_DIR / f"{filename}.json"
+
+    try:
+        file_path.unlink()
+        return gr.update(choices=get_history_files(), value=None)
+    except Exception:
+        return gr.update()
+
+
+def new_conversation() -> tuple[list, None, str, gr.update]:
+    """Start a new conversation."""
+    global analyzer
+
+    if analyzer:
+        analyzer.new_conversation()
+
+    return [], None, "", gr.update(value=None)
 
 
 def create_app():
@@ -189,100 +192,86 @@ def create_app():
 
     with gr.Blocks(title="CSV 数据分析系统") as app:
 
-        gr.Markdown("# CSV 数据分析系统 (Code Interpreter)")
+        # ========== Page Header (Full Width) ==========
+        gr.Markdown("# CSV 数据分析系统")
+        gr.Markdown("上传 CSV 文件，用自然语言提问，AI 自动生成代码分析数据")
 
-        # Top row: File upload and settings (compact)
-        with gr.Row():
-            file_input = gr.File(
-                label="上传 CSV",
-                file_types=[".csv"],
-                file_count="single",
-                scale=2
-            )
-            model_dropdown = gr.Dropdown(
-                choices=["qwen", "openai", "deepseek"],
-                value="qwen",
-                label="模型",
-                scale=1
-            )
-            status_text = gr.Textbox(
-                label="状态",
-                interactive=False,
-                value="请上传 CSV",
-                scale=1
-            )
+        # ========== Main Content ==========
+        with gr.Row(equal_height=True):
+            # ========== Left Sidebar ==========
+            with gr.Column(scale=1, min_width=250):
+                # New chat button
+                new_chat_btn = gr.Button("+ 新建对话", variant="primary", size="lg")
 
-        # CSV preview (collapsible and compact)
-        with gr.Accordion("CSV 预览", open=False):
-            csv_preview = gr.Dataframe(
-                label="",
-                interactive=False,
-                wrap=True,
-                max_height=150
-            )
-
-        # Main chat area (takes most space)
-        gr.Markdown("### 对话")
-
-        chatbot = gr.Chatbot(
-            label="",
-            height=500,
-            elem_classes=["chatbot"]
-        )
-
-        # Image output (collapsible)
-        with gr.Accordion("生成的图表", open=False):
-            image_output = gr.Image(
-                label="",
-                type="filepath",
-                height=300
-            )
-
-        # Input row
-        with gr.Row():
-            question_input = gr.Textbox(
-                placeholder="输入数据分析问题...",
-                label="",
-                scale=5,
-                lines=1
-            )
-            submit_btn = gr.Button("发送", variant="primary", scale=1)
-
-        # History management (collapsible)
-        with gr.Accordion("对话管理", open=False):
-            with gr.Row():
-                clear_btn = gr.Button("清空当前对话", variant="secondary")
-
-            gr.Markdown("**保存对话**")
-            with gr.Row():
-                save_name_input = gr.Textbox(
-                    placeholder="输入保存名称（可选）",
-                    label="",
-                    scale=3
+                # File upload
+                file_input = gr.File(
+                    label="上传 CSV",
+                    file_types=[".csv"],
+                    file_count="single"
                 )
-                save_btn = gr.Button("保存", scale=1)
-            save_status = gr.Textbox(label="", interactive=False, max_lines=1)
 
-            gr.Markdown("**加载历史对话**")
-            with gr.Row():
-                history_dropdown = gr.Dropdown(
+                # Model and status
+                model_dropdown = gr.Dropdown(
+                    choices=["qwen", "openai", "deepseek"],
+                    value="qwen",
+                    label="模型"
+                )
+                status_text = gr.Textbox(
+                    label="状态",
+                    interactive=False,
+                    value="就绪",
+                    max_lines=1
+                )
+
+                # CSV preview
+                with gr.Accordion("CSV 预览", open=False):
+                    csv_preview = gr.Dataframe(
+                        label="",
+                        interactive=False,
+                        wrap=True,
+                        max_height=120
+                    )
+
+                # History section with taller list
+                gr.Markdown("### 历史对话")
+                history_list = gr.Dropdown(
                     choices=get_history_files(),
                     label="",
-                    scale=3
+                    interactive=True
                 )
-                refresh_btn = gr.Button("刷新", scale=1)
-                load_btn = gr.Button("加载", scale=1)
-            load_status = gr.Textbox(label="", interactive=False, max_lines=1)
+                with gr.Row():
+                    load_btn = gr.Button("加载", size="sm", scale=1)
+                    delete_btn = gr.Button("删除", size="sm", variant="stop", scale=1)
 
-        # Example questions
-        gr.Markdown(
-            """
-            ---
-            **示例:** 分析 Clothing 随时间变化的总销售额趋势 | 对 Bikes 进行同样的分析 | 哪些年份 Components 比 Accessories 的总销售额高?
-            """
-        )
+            # ========== Right Main Area ==========
+            with gr.Column(scale=4):
+                # Chat area
+                chatbot = gr.Chatbot(
+                    label="",
+                    height=750
+                )
 
-        # Event handlers
+                # Image output
+                with gr.Accordion("生成的图表", open=False):
+                    image_output = gr.Image(
+                        label="",
+                        type="filepath",
+                        height=280
+                    )
+
+                # Input row
+                with gr.Row():
+                    question_input = gr.Textbox(
+                        placeholder="输入数据分析问题，如：分析各品类的销售趋势",
+                        label="",
+                        scale=5,
+                        lines=1
+                    )
+                    with gr.Column(scale=1, min_width=100):
+                        submit_btn = gr.Button("发送", variant="primary")
+                        save_btn = gr.Button("保存对话", variant="primary")
+
+        # ========== Event Handlers ==========
         file_input.change(
             fn=load_csv,
             inputs=[file_input],
@@ -307,28 +296,28 @@ def create_app():
             outputs=[chatbot, image_output, question_input]
         )
 
-        clear_btn.click(
-            fn=clear_history,
+        new_chat_btn.click(
+            fn=new_conversation,
             inputs=[],
-            outputs=[chatbot, image_output]
+            outputs=[chatbot, image_output, question_input, history_list]
         )
 
         save_btn.click(
             fn=save_history,
-            inputs=[chatbot, save_name_input],
-            outputs=[save_status]
-        )
-
-        refresh_btn.click(
-            fn=refresh_history_list,
-            inputs=[],
-            outputs=[history_dropdown]
+            inputs=[chatbot],
+            outputs=[history_list]
         )
 
         load_btn.click(
             fn=load_history,
-            inputs=[history_dropdown],
-            outputs=[chatbot, load_status]
+            inputs=[history_list],
+            outputs=[chatbot]
+        )
+
+        delete_btn.click(
+            fn=delete_history,
+            inputs=[history_list],
+            outputs=[history_list]
         )
 
     return app
