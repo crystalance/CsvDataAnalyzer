@@ -11,6 +11,7 @@ import pandas as pd
 from config import Config
 from core.executor import CodeExecutor, ExecutionResult
 from core.prompts import PromptBuilder
+from core.error_handler import ErrorClassifier, format_error_context
 from llm import QwenLLM, OpenAILLM, DeepSeekLLM, BaseLLM
 
 
@@ -166,14 +167,25 @@ class CSVAnalyzer:
 
                 # Code execution failed
                 last_error = result.error
+
+                # Classify the error for better feedback
+                error_info = ErrorClassifier.classify(result.error)
+                error_hint = ErrorClassifier.get_hint(error_info)
+
                 if yield_callback:
-                    yield_callback(f"❌ 代码执行失败 (尝试 {attempt + 1}/{max_retries})\n错误信息:\n{result.error}")
+                    yield_callback(f"❌ 代码执行失败 (尝试 {attempt + 1}/{max_retries})")
+                    yield_callback(f"错误类型: {error_info.error_type.value.upper()}")
+                    yield_callback(f"错误信息:\n{result.error}")
+                    yield_callback(f"修复建议:\n{error_hint}")
                     yield_callback("🔧 正在请求大模型修正代码...")
 
-                # Prepare error correction message with full context
-                error_prompt = PromptBuilder.build_error_correction_prompt(
-                    result.error,
+                # Prepare enhanced error correction message
+                columns, dtypes, _ = self._get_csv_info()
+                error_prompt = format_error_context(
+                    error_msg=result.error,
                     code=code,
+                    columns=columns,
+                    dtypes=dtypes,
                     conversation_history=self._get_recent_history()
                 )
                 current_messages.append({"role": "assistant", "content": response})
@@ -351,12 +363,24 @@ class CSVAnalyzer:
                     break
                 
                 last_error = exec_result.error
-                yield f"❌ 代码执行失败 (尝试 {attempt + 1}/{Config.MAX_RETRIES})\n错误信息:\n{exec_result.error}\n"
+
+                # Classify the error for better feedback
+                error_info = ErrorClassifier.classify(exec_result.error)
+                error_hint = ErrorClassifier.get_hint(error_info)
+
+                yield f"❌ 代码执行失败 (尝试 {attempt + 1}/{Config.MAX_RETRIES})\n"
+                yield f"错误类型: {error_info.error_type.value.upper()}\n"
+                yield f"错误信息:\n{exec_result.error}\n"
+                yield f"修复建议:\n{error_hint}\n"
                 yield "🔧 正在请求大模型修正代码...\n"
-                
-                error_prompt = PromptBuilder.build_error_correction_prompt(
-                    exec_result.error,
+
+                # Prepare enhanced error correction message
+                columns, dtypes, _ = self._get_csv_info()
+                error_prompt = format_error_context(
+                    error_msg=exec_result.error,
                     code=code,
+                    columns=columns,
+                    dtypes=dtypes,
                     conversation_history=self._get_recent_history()
                 )
                 messages.append({"role": "assistant", "content": response})
@@ -417,6 +441,16 @@ class CSVAnalyzer:
         """Start a new conversation (clear history)."""
         self.history = []
         self.executor.reset()
+
+    def set_test_mode(self, enabled: bool, fail_count: int = 1):
+        """
+        Enable or disable test mode for error correction demonstration.
+
+        Args:
+            enabled: Whether to enable test mode.
+            fail_count: Number of simulated failures before success.
+        """
+        self.executor.set_test_mode(enabled, fail_count)
 
     def get_history(self) -> list[dict]:
         """Get conversation history."""

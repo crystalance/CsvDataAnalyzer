@@ -37,6 +37,10 @@ ERROR_CORRECTION_PROMPT = """代码执行出错:
 注意：请仔细分析错误原因，确保修正后的代码能够正确运行。
 """
 
+# Enhanced error correction prompt with more context
+ENHANCED_ERROR_CORRECTION_PROMPT = """{error_context}
+"""
+
 EXPLANATION_PROMPT = """基于以下代码执行结果，用中文给出简洁的数据分析解释（2-3句话）:
 
 用户问题: {question}

@@ -28,10 +28,33 @@ class ExecutionResult:
 class CodeExecutor:
     """Executes Python code in a controlled environment."""
 
+    # Simulated errors for testing
+    _TEST_ERRORS = [
+        "KeyError: 'NonexistentColumn'",
+        "TypeError: cannot convert the series to <class 'float'>",
+        "ValueError: could not convert string to float: '$1,234'",
+    ]
+
     def __init__(self, csv_path: str):
         self.csv_path = csv_path
         self.globals: dict = {}
         self._init_globals()
+        # Test mode settings
+        self._test_mode = False
+        self._fail_count = 0
+        self._max_fails = 0
+
+    def set_test_mode(self, enabled: bool, fail_count: int = 1):
+        """
+        Enable or disable test mode with error injection.
+
+        Args:
+            enabled: Whether to enable test mode.
+            fail_count: Number of times to inject errors before allowing success.
+        """
+        self._test_mode = enabled
+        self._max_fails = fail_count if enabled else 0
+        self._fail_count = 0
 
     def _init_globals(self):
         """Initialize the global namespace with common imports."""
@@ -82,6 +105,17 @@ class CodeExecutor:
         Returns:
             ExecutionResult with success status, output, error, and figure path.
         """
+        # Test mode: inject errors
+        if self._test_mode and self._fail_count < self._max_fails:
+            self._fail_count += 1
+            error_msg = self._TEST_ERRORS[(self._fail_count - 1) % len(self._TEST_ERRORS)]
+            return ExecutionResult(
+                success=False,
+                output="",
+                error=f"[测试模式] {error_msg}",
+                figure_path=None
+            )
+
         # Extract code from markdown if needed
         code = self._extract_code(code)
 

@@ -232,6 +232,20 @@ def new_conversation() -> tuple[list, None, str, gr.update]:
     return [], None, "", gr.update(value=None)
 
 
+def set_test_mode(enabled: bool, fail_count: int) -> str:
+    """Enable or disable test mode for error correction demonstration."""
+    global analyzer
+
+    if analyzer is None:
+        return "请先上传 CSV"
+
+    analyzer.set_test_mode(enabled, int(fail_count))
+    if enabled:
+        return f"测试模式已启用 (模拟 {int(fail_count)} 次失败)"
+    else:
+        return "就绪"
+
+
 def create_app():
     """Create and configure the Gradio app."""
 
@@ -290,6 +304,22 @@ def create_app():
                         interactive=False,
                         value="就绪",
                         max_lines=1
+                    )
+
+                # Test mode for demonstrating error correction
+                with gr.Accordion("测试模式", open=False):
+                    test_mode_checkbox = gr.Checkbox(
+                        label="启用错误注入",
+                        value=False,
+                        info="模拟代码执行错误，测试纠错功能"
+                    )
+                    test_fail_count = gr.Slider(
+                        minimum=1,
+                        maximum=2,
+                        value=1,
+                        step=1,
+                        label="模拟失败次数",
+                        info="在成功前模拟失败的次数"
                     )
 
                 # CSV preview
@@ -354,6 +384,19 @@ def create_app():
         model_dropdown.change(
             fn=switch_model,
             inputs=[model_dropdown],
+            outputs=[status_text]
+        )
+
+        # Test mode event handlers
+        test_mode_checkbox.change(
+            fn=set_test_mode,
+            inputs=[test_mode_checkbox, test_fail_count],
+            outputs=[status_text]
+        )
+
+        test_fail_count.change(
+            fn=set_test_mode,
+            inputs=[test_mode_checkbox, test_fail_count],
             outputs=[status_text]
         )
 
