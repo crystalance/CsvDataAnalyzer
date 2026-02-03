@@ -1,126 +1,324 @@
-# CSV 数据分析系统 (Code Interpreter)
+# CSV Data Analyzer
 
-基于大模型的 CSV 数据分析系统，仿照 OpenAI Code Interpreter 设计思想构建。
+A Code Interpreter-style data analysis system powered by Large Language Models.
 
-## 功能特点
+## What & Why
 
-- **自然语言交互**: 用自然语言描述数据分析需求，AI 自动生成 Python 代码
-- **代码自动执行**: 生成的代码在沙箱环境中自动执行
-- **智能纠错**: 代码执行失败时自动修正重试（最多3次）
-- **图表生成**: 支持 matplotlib 图表，自动保存并显示
-- **对话记忆**: 支持多轮对话，可利用上下文进行关联分析
-- **多模型支持**: 支持通义千问(Qwen)、OpenAI、DeepSeek
+### What is this?
 
-## 项目结构
+This project implements a **Code Interpreter** pattern - a system that:
+1. Takes natural language questions about data
+2. Generates Python code to answer those questions
+3. Executes the code in a sandboxed environment
+4. Returns results (text, tables, charts) to the user
+
+### Why build this?
+
+Inspired by OpenAI's Code Interpreter (now called Advanced Data Analysis), this project demonstrates how to build a similar system using open-source components:
+
+- **Democratize data analysis**: Users don't need to know Python to analyze data
+- **Transparent reasoning**: Unlike black-box AI, users can see and verify the generated code
+- **Iterative refinement**: The system learns from execution errors and self-corrects
+
+---
+
+## System Design
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Gradio Web UI                                  │
+│                           (app.py - Frontend)                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             CSVAnalyzer                                     │
+│                     (analyzer.py - Orchestrator)                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  • Manages conversation history                                     │    │
+│  │  • Coordinates LLM and Executor                                     │    │
+│  │  • Implements retry logic with error feedback                       │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                          │                    │
+                          ▼                    ▼
+┌─────────────────────────────────┐  ┌─────────────────────────────────────────┐
+│         LLM Layer               │  │              Core Layer                 │
+│         (llm/)                  │  │              (core/)                    │
+│  ┌───────────────────────────┐  │  │  ┌─────────────────────────────────┐    │
+│  │  BaseLLM (Abstract)       │  │  │  │  CodeExecutor                   │    │
+│  │    ├── QwenLLM            │  │  │  │  • Sandboxed code execution     │    │
+│  │    ├── OpenAILLM          │  │  │  │  • Output/figure capture        │    │
+│  │    └── DeepSeekLLM        │  │  │  └─────────────────────────────────┘    │
+│  └───────────────────────────┘  │  │  ┌─────────────────────────────────┐    │
+│                                 │  │  │  ErrorHandler                   │    │
+│                                 │  │  │  • Error classification         │    │
+│                                 │  │  │  • Targeted fix suggestions     │    │
+│                                 │  │  └─────────────────────────────────┘    │
+│                                 │  │  ┌─────────────────────────────────┐    │
+│                                 │  │  │  PromptBuilder                  │    │
+│                                 │  │  │  • System prompts               │    │
+│                                 │  │  │  • Error correction prompts     │    │
+│                                 │  │  └─────────────────────────────────┘    │
+└─────────────────────────────────┘  └─────────────────────────────────────────┘
+```
+
+### Request Flow
+
+```
+User Question: "What is the average sales by region?"
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Build Context                                                        │
+│ ┌──────────────────────────────────────────────────────────────────────────┐ │
+│ │ System Prompt + CSV Schema + Conversation History + User Question        │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Step 2: LLM Generates Code                                                   │
+│ ┌──────────────────────────────────────────────────────────────────────────┐ │
+│ │ ```python                                                                │ │
+│ │ df = pd.read_csv(csv_path)                                               │ │
+│ │ result = df.groupby('Region')['Sales'].mean()                            │ │
+│ │ print(result)                                                            │ │
+│ │ ```                                                                      │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Execute Code                                                         │
+│ ┌────────────────────────────────┐    ┌────────────────────────────────────┐ │
+│ │ Success?                       │    │ Output:                            │ │
+│ │   YES ──────────────────────────────▶ Region                             │ │
+│ │                                │    │ East     1523.45                   │ │
+│ │                                │    │ West     1821.30                   │ │
+│ │                                │    │ ...                                │ │
+│ └────────────────────────────────┘    └────────────────────────────────────┘ │
+│                 │ NO                                                         │
+│                 ▼                                                            │
+│ ┌──────────────────────────────────────────────────────────────────────────┐ │
+│ │ Error Feedback Loop (up to 3 retries)                                    │ │
+│ │   1. Classify error (KeyError, TypeError, etc.)                          │ │
+│ │   2. Generate targeted fix suggestions                                   │ │
+│ │   3. Send error context back to LLM                                      │ │
+│ │   4. LLM generates corrected code                                        │ │
+│ │   5. Re-execute                                                          │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Generate Explanation                                                 │
+│ ┌──────────────────────────────────────────────────────────────────────────┐ │
+│ │ LLM summarizes the results in natural language                           │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    Display to User
+```
+
+---
+
+## Key Design Choices
+
+### 1. Error Feedback Loop
+
+**Why?** LLMs occasionally generate code with errors (wrong column names, type mismatches, syntax errors). Instead of failing immediately, we:
+
+```python
+for attempt in range(max_retries):  # Default: 3 attempts
+    code = llm.generate(messages)
+    result = executor.execute(code)
+
+    if result.success:
+        return result
+
+    # Classify error and build targeted feedback
+    error_info = ErrorClassifier.classify(result.error)
+    hint = ErrorClassifier.get_hint(error_info)  # e.g., "Column 'Sales' not found. Available: ['Revenue', 'Quantity']"
+
+    # Add error context for next attempt
+    messages.append({"role": "user", "content": error_context})
+```
+
+**Benefits:**
+- **Higher success rate**: Many errors are fixable with proper feedback
+- **Better UX**: Users don't need to manually debug LLM-generated code
+- **Learning opportunity**: Error context helps LLM understand the data better
+
+### 2. Error Classification
+
+We classify errors into 8 types with targeted suggestions:
+
+| Error Type | Example | Suggestion |
+|------------|---------|------------|
+| `KEY_ERROR` | `KeyError: 'Sales'` | Check column names, show available columns |
+| `TYPE_ERROR` | `TypeError: cannot convert...` | Suggest `astype()`, `pd.to_numeric()` |
+| `VALUE_ERROR` | `ValueError: could not convert '$1,234'` | Suggest data cleaning (remove `$`, `,`) |
+| `SYNTAX_ERROR` | `SyntaxError: invalid syntax` | Check brackets, indentation |
+| ... | ... | ... |
+
+### 3. Modular LLM Layer
+
+**Why abstract the LLM?** Different LLMs have different APIs, rate limits, and capabilities. Our design:
+
+```python
+class BaseLLM(ABC):
+    @abstractmethod
+    def chat(self, messages: list[dict]) -> str:
+        pass
+
+class QwenLLM(BaseLLM):      # DashScope API
+class OpenAILLM(BaseLLM):    # OpenAI API
+class DeepSeekLLM(BaseLLM):  # OpenAI-compatible API
+```
+
+**Benefits:**
+- **Easy to switch**: Change model with one line
+- **Easy to extend**: Add new models by implementing `BaseLLM`
+- **Testable**: Mock LLM for unit tests
+
+### 4. Sandboxed Execution
+
+Code runs in a controlled environment with:
+- Pre-imported libraries (`pandas`, `matplotlib`)
+- Captured stdout/stderr
+- Automatic figure saving
+- No file system access outside designated directories
+
+---
+
+## Project Structure
 
 ```
 CsvDataAnalyzer/
-├── app.py                  # Gradio Web 应用入口
-├── analyzer.py             # 核心分析器类
-├── llm/
-│   ├── __init__.py
-│   ├── base.py             # LLM 抽象基类
-│   ├── qwen.py             # 通义千问实现
-│   ├── openai_llm.py       # OpenAI 实现
-│   └── deepseek.py         # DeepSeek 实现
-├── core/
-│   ├── __init__.py
-│   ├── executor.py         # 代码执行器
-│   └── prompts.py          # Prompt 模板
-├── config.py               # 配置管理
-├── requirements.txt        # 依赖列表
-└── README.md
+├── app.py                      # Gradio Web UI
+├── analyzer.py                 # Core orchestrator (CSVAnalyzer)
+├── config.py                   # Configuration management
+│
+├── llm/                        # LLM abstraction layer
+│   ├── base.py                 # Abstract base class
+│   ├── qwen.py                 # Qwen (通义千问) implementation
+│   ├── openai_llm.py           # OpenAI implementation
+│   └── deepseek.py             # DeepSeek implementation
+│
+├── core/                       # Core execution components
+│   ├── executor.py             # Sandboxed code executor
+│   ├── error_handler.py        # Error classification & suggestions
+│   └── prompts.py              # Prompt templates
+│
+├── tests/                      # Test suite
+│   ├── test_error_handler.py   # Unit tests for error handling
+│   └── test_error_correction_flow.py  # Integration tests
+│
+├── docs/                       # Documentation
+│   └── improvements.md         # Development notes
+│
+├── history/                    # Saved conversations (auto-generated)
+├── outputs/                    # Generated figures (auto-generated)
+└── data/                       # Sample CSV files
 ```
 
-## 快速开始
+---
 
-### macOS
+## How to Run
+
+### Prerequisites
+
+- Python 3.10+
+- API key for at least one LLM provider
+
+### Installation
 
 ```bash
-# 1. 创建虚拟环境
+# Clone the repository
+git clone <repo-url>
+cd CsvDataAnalyzer
+
+# Create virtual environment
 python3 -m venv venv
+source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure API keys
+cp .env.example .env
+# Edit .env and add your API keys
+```
+
+### Configuration
+
+Edit `.env` file:
+
+```bash
+# Required: At least one of these
+DASHSCOPE_API_KEY=your_qwen_key      # For Qwen (通义千问)
+OPENAI_API_KEY=your_openai_key       # For OpenAI
+DEEPSEEK_API_KEY=your_deepseek_key   # For DeepSeek
+```
+
+### Run the Application
+
+```bash
+source venv/bin/activate
+python app.py
+# Open http://localhost:7860 in browser
+```
+
+### Run Tests
+
+```bash
 source venv/bin/activate
 
-# 2. 安装依赖
-pip install -r requirements.txt
+# Unit tests
+python -m unittest tests/test_error_handler.py -v
 
-# 3. 配置 API Key
-cp .env.example .env
-# 编辑 .env 文件，填入 API Key
-
-# 4. 运行
-python app.py
-
-# 5. 浏览器访问 http://localhost:7860
+# Integration test (error correction flow)
+python tests/test_error_correction_flow.py --fail-count 2
 ```
 
-### Windows
+### Test Error Correction in UI
 
-```powershell
-# 1. 创建虚拟环境
-python -m venv venv
-.\venv\Scripts\activate
+1. Upload a CSV file
+2. Expand "测试模式" (Test Mode) panel
+3. Check "启用错误注入" (Enable Error Injection)
+4. Set failure count (1-2)
+5. Ask any question and watch the error correction process
 
-# 2. 安装依赖
-pip install -r requirements.txt
+---
 
-# 3. 配置 API Key
-copy .env.example .env
-# 编辑 .env 文件，填入 API Key
+## Example Usage
 
-# 4. 运行
-python app.py
-
-# 5. 浏览器访问 http://localhost:7860
-```
-
-## 配置说明
-
-在 `.env` 文件中配置 API Key：
+Upload a sales CSV and try these questions:
 
 ```
-# 通义千问 API Key (必填)
-DASHSCOPE_API_KEY=your_key_here
-
-# OpenAI API Key (可选)
-OPENAI_API_KEY=your_key_here
-
-# DeepSeek API Key (可选)
-DEEPSEEK_API_KEY=your_key_here
+1. "Show the first 5 rows of data"
+2. "What is the total sales by region?"
+3. "Plot monthly sales trend"
+4. "Which product category has the highest average sales?"
+5. "Compare sales between 2022 and 2023"
 ```
 
-## 使用说明
 
-1. **上传 CSV 文件**: 点击上传区域选择 CSV 文件
-2. **选择模型**: 从下拉菜单选择要使用的大模型
-3. **输入问题**: 在输入框中用自然语言描述数据分析需求
-4. **查看结果**: 系统会显示生成的代码、执行结果、图表和分析解释
-5. **继续对话**: 可以基于之前的分析继续提问
-6. **清空对话**: 点击"清空对话"开始新的分析会话
+## Tech Stack
 
-## 示例问题
+| Component | Technology |
+|-----------|------------|
+| Frontend | Gradio 4.x |
+| LLM | Qwen / OpenAI / DeepSeek |
+| Data Processing | Pandas |
+| Visualization | Matplotlib |
+| Configuration | python-dotenv |
 
-假设上传的 CSV 文件包含销售数据：
-
-1. "分析 Clothing 随时间变化的总销售额趋势"
-2. "对 Bikes 进行同样的分析"
-3. "哪些年份 Components 比 Accessories 的总销售额高?"
-
-## 依赖说明
-
-- `gradio>=4.0.0` - Web UI 框架
-- `dashscope>=1.14.0` - 通义千问 SDK
-- `openai>=1.0.0` - OpenAI SDK (也用于 DeepSeek)
-- `pandas>=2.0.0` - 数据处理
-- `matplotlib>=3.7.0` - 图表生成
-- `python-dotenv>=1.0.0` - 环境变量管理
-
-## 注意事项
-
-- 图表标签使用英文以避免中文显示问题
-- 代码在受限环境中执行，可能不支持所有 Python 功能
-- 大文件分析可能需要较长时间
-- 请确保 API Key 配置正确
+---
 
 ## License
 
