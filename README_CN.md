@@ -1,88 +1,88 @@
-# CSV Data Analyzer
+# CSV 数据分析系统
 
-A Code Interpreter-style data analysis system powered by Large Language Models.
+基于大语言模型的 Code Interpreter 风格数据分析系统。
 
-English | [中文](README_CN.md)
+[English](README.md) | 中文
 
-## What & Why
+## 项目简介
 
-### What is this?
+### 这是什么？
 
-This project implements a **Code Interpreter** pattern - a system that:
-1. Takes natural language questions about data
-2. Generates Python code to answer those questions
-3. Executes the code in a sandboxed environment
-4. Returns results (text, tables, charts) to the user
+本项目实现了 **Code Interpreter** 模式 - 一个能够：
+1. 接收用户的自然语言问题
+2. 自动生成 Python 代码来回答问题
+3. 在沙箱环境中执行代码
+4. 返回结果（文本、表格、图表）给用户
 
-### Why build this?
+### 为什么要做这个？
 
-Inspired by OpenAI's Code Interpreter (now called Advanced Data Analysis), this project demonstrates how to build a similar system using open-source components:
+受 OpenAI Code Interpreter（现称 Advanced Data Analysis）启发，本项目展示如何用开源组件构建类似系统：
 
-- **Democratize data analysis**: Users don't need to know Python to analyze data
-- **Transparent reasoning**: Unlike black-box AI, users can see and verify the generated code
-- **Iterative refinement**: The system learns from execution errors and self-corrects
+- **降低数据分析门槛**：用户无需会写 Python 就能分析数据
+- **推理过程透明**：不同于黑箱 AI，用户可以看到并验证生成的代码
+- **自动纠错迭代**：系统能从执行错误中学习并自动修正
 
 ---
 
-## System Design
+## 系统设计
 
-### Architecture Overview
+### 架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Gradio Web UI                                  │
-│                           (app.py - Frontend)                               │
+│                           (app.py - 前端界面)                                │
 └─────────────────────────────────────────────────────────────────────────────┘
                                      │
                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             CSVAnalyzer                                     │
-│                     (analyzer.py - Orchestrator)                            │
+│                        (analyzer.py - 核心调度器)                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  • Manages conversation history                                     │    │
-│  │  • Coordinates LLM and Executor                                     │    │
-│  │  • Implements retry logic with error feedback                       │    │
+│  │  • 管理对话历史                                                       │    │
+│  │  • 协调 LLM 和执行器                                                  │    │
+│  │  • 实现带错误反馈的重试逻辑                                             │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
                           │                    │
                           ▼                    ▼
 ┌─────────────────────────────────┐  ┌─────────────────────────────────────────┐
-│         LLM Layer               │  │              Core Layer                 │
+│         LLM 层                  │  │              核心层                      │
 │         (llm/)                  │  │              (core/)                    │
 │  ┌───────────────────────────┐  │  │  ┌─────────────────────────────────┐    │
-│  │  BaseLLM (Abstract)       │  │  │  │  CodeExecutor                   │    │
-│  │    ├── QwenLLM            │  │  │  │  • Sandboxed code execution     │    │
-│  │    ├── OpenAILLM          │  │  │  │  • Output/figure capture        │    │
+│  │  BaseLLM (抽象基类)        │  │  │  │  CodeExecutor                   │    │
+│  │    ├── QwenLLM            │  │  │  │  • 沙箱代码执行                   │    │
+│  │    ├── OpenAILLM          │  │  │  │  • 输出/图表捕获                  │    │
 │  │    └── DeepSeekLLM        │  │  │  └─────────────────────────────────┘    │
 │  └───────────────────────────┘  │  │  ┌─────────────────────────────────┐    │
 │                                 │  │  │  ErrorHandler                   │    │
-│                                 │  │  │  • Error classification         │    │
-│                                 │  │  │  • Targeted fix suggestions     │    │
+│                                 │  │  │  • 错误分类                      │    │
+│                                 │  │  │  • 针对性修复建议                 │    │
 │                                 │  │  └─────────────────────────────────┘    │
 │                                 │  │  ┌─────────────────────────────────┐    │
 │                                 │  │  │  PromptBuilder                  │    │
-│                                 │  │  │  • System prompts               │    │
-│                                 │  │  │  • Error correction prompts     │    │
+│                                 │  │  │  • 系统提示词                     │    │
+│                                 │  │  │  • 错误纠正提示词                 │    │
 │                                 │  │  └─────────────────────────────────┘    │
 └─────────────────────────────────┘  └─────────────────────────────────────────┘
 ```
 
-### Request Flow
+### 请求流程
 
 ```
-User Question: "What is the average sales by region?"
+用户问题: "各地区的平均销售额是多少？"
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Step 1: Build Context                                                        │
+│ 步骤 1: 构建上下文                                                              │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
-│ │ System Prompt + CSV Schema + Conversation History + User Question        │ │
+│ │ 系统提示词 + CSV Schema + 对话历史 + 用户问题                                │ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Step 2: LLM Generates Code                                                   │
+│ 步骤 2: LLM 生成代码                                                           │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
 │ │ ```python                                                                │ │
 │ │ df = pd.read_csv(csv_path)                                               │ │
@@ -94,82 +94,86 @@ User Question: "What is the average sales by region?"
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Step 3: Execute Code                                                         │
+│ 步骤 3: 执行代码                                                               │
 │ ┌────────────────────────────────┐    ┌────────────────────────────────────┐ │
-│ │ Success?                       │    │ Output:                            │ │
-│ │   YES ──────────────────────────────▶ Region                             │ │
+│ │ 成功?                          │    │ 输出:                               │ │
+│ │   是 ───────────────────────────────▶ Region                             │ │
 │ │                                │    │ East     1523.45                   │ │
 │ │                                │    │ West     1821.30                   │ │
 │ │                                │    │ ...                                │ │
 │ └────────────────────────────────┘    └────────────────────────────────────┘ │
-│                 │ NO                                                         │
+│                 │ 否                                                         │
 │                 ▼                                                            │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
-│ │ Error Feedback Loop (up to 3 retries)                                    │ │
-│ │   1. Classify error (KeyError, TypeError, etc.)                          │ │
-│ │   2. Generate targeted fix suggestions                                   │ │
-│ │   3. Send error context back to LLM                                      │ │
-│ │   4. LLM generates corrected code                                        │ │
-│ │   5. Re-execute                                                          │ │
+│ │ 错误反馈循环 (最多重试 3 次)                                                 │ │ 
+│ │   1. 分类错误类型 (KeyError, TypeError 等)                                 │ │ 
+│ │   2. 生成针对性修复建议                                                     │ │
+│ │   3. 将错误上下文发回 LLM                                                   │ │
+│ │   4. LLM 生成修正后的代码                                                   │ │
+│ │   5. 重新执行                                                             │ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Step 4: Generate Explanation                                                 │
+│ 步骤 4: 生成解释                                                               │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
-│ │ LLM summarizes the results in natural language                           │ │
+│ │ LLM 用自然语言总结分析结果                                                   │ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-                    Display to User
+                         展示给用户
 ```
 
 ---
 
-## Key Design Choices
+## 核心设计决策
 
-### 1. Error Feedback Loop
+### 1. 错误反馈循环
 
-**Why?** LLMs occasionally generate code with errors (wrong column names, type mismatches, syntax errors). Instead of failing immediately, we:
+**为什么需要？** LLM 生成的代码偶尔会有错误（列名错误、类型不匹配、语法错误）。我们不是直接报错，而是：
 
 ```python
-for attempt in range(max_retries):  # Default: 3 attempts
+for attempt in range(max_retries):  # 默认: 3 次
     code = llm.generate(messages)
     result = executor.execute(code)
 
     if result.success:
         return result
 
-    # Classify error and build targeted feedback
+    # 分类错误并构建针对性反馈
     error_info = ErrorClassifier.classify(result.error)
-    hint = ErrorClassifier.get_hint(error_info)  # e.g., "Column 'Sales' not found. Available: ['Revenue', 'Quantity']"
+    hint = ErrorClassifier.get_hint(error_info)
+    # 例如: "找不到列 'Sales'。可用列: ['Revenue', 'Quantity']"
 
-    # Add error context for next attempt
+    # 添加错误上下文用于下次尝试
     messages.append({"role": "user", "content": error_context})
 ```
 
-**Benefits:**
-- **Higher success rate**: Many errors are fixable with proper feedback
-- **Better UX**: Users don't need to manually debug LLM-generated code
-- **Learning opportunity**: Error context helps LLM understand the data better
+**好处：**
+- **更高成功率**：很多错误通过适当反馈可以修复
+- **更好的用户体验**：用户无需手动调试 LLM 生成的代码
+- **学习机会**：错误上下文帮助 LLM 更好地理解数据
 
-### 2. Error Classification
+### 2. 错误分类
 
-We classify errors into 8 types with targeted suggestions:
+我们将错误分为 8 种类型，并给出针对性建议：
 
-| Error Type | Example | Suggestion |
-|------------|---------|------------|
-| `KEY_ERROR` | `KeyError: 'Sales'` | Check column names, show available columns |
-| `TYPE_ERROR` | `TypeError: cannot convert...` | Suggest `astype()`, `pd.to_numeric()` |
-| `VALUE_ERROR` | `ValueError: could not convert '$1,234'` | Suggest data cleaning (remove `$`, `,`) |
-| `SYNTAX_ERROR` | `SyntaxError: invalid syntax` | Check brackets, indentation |
-| ... | ... | ... |
+| 错误类型 | 示例 | 建议 |
+|----------|------|------|
+| `KEY_ERROR` | `KeyError: 'Sales'` | 检查列名，展示可用列 |
+| `TYPE_ERROR` | `TypeError: cannot convert...` | 建议使用 `astype()`, `pd.to_numeric()` |
+| `VALUE_ERROR` | `ValueError: could not convert '$1,234'` | 建议数据清洗（去除 `$`, `,`） |
+| `SYNTAX_ERROR` | `SyntaxError: invalid syntax` | 检查括号、缩进 |
+| `NAME_ERROR` | `NameError: name 'x' is not defined` | 检查变量是否定义 |
+| `INDEX_ERROR` | `IndexError: list index out of range` | 检查数据长度 |
+| `ATTRIBUTE_ERROR` | `AttributeError: 'DataFrame' has no...` | 检查对象类型和方法 |
+| `IMPORT_ERROR` | `ModuleNotFoundError: No module...` | 使用已导入的库 |
 
-### 3. Modular LLM Layer
+### 3. 模块化 LLM 层
 
-**Why abstract the LLM?** Different LLMs have different APIs, rate limits, and capabilities. Our design:
+**为什么要抽象 LLM？** 不同的 LLM 有不同的 API、限速和能力。我们的设计：
 
 ```python
 class BaseLLM(ABC):
@@ -177,148 +181,148 @@ class BaseLLM(ABC):
     def chat(self, messages: list[dict]) -> str:
         pass
 
-class QwenLLM(BaseLLM):      # DashScope API
+class QwenLLM(BaseLLM):      # 通义千问 API
 class OpenAILLM(BaseLLM):    # OpenAI API
-class DeepSeekLLM(BaseLLM):  # OpenAI-compatible API
+class DeepSeekLLM(BaseLLM):  # OpenAI 兼容 API
 ```
 
-**Benefits:**
-- **Easy to switch**: Change model with one line
-- **Easy to extend**: Add new models by implementing `BaseLLM`
-- **Testable**: Mock LLM for unit tests
+**好处：**
+- **易于切换**：一行代码切换模型
+- **易于扩展**：实现 `BaseLLM` 即可添加新模型
+- **便于测试**：可以 mock LLM 进行单元测试
 
-### 4. Sandboxed Execution
+### 4. 沙箱执行
 
-Code runs in a controlled environment with:
-- Pre-imported libraries (`pandas`, `matplotlib`)
-- Captured stdout/stderr
-- Automatic figure saving
-- No file system access outside designated directories
+代码在受控环境中运行：
+- 预导入的库（`pandas`, `matplotlib`）
+- 捕获 stdout/stderr
+- 自动保存图表
+- 限制文件系统访问
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 CsvDataAnalyzer/
-├── app.py                      # Gradio Web UI
-├── analyzer.py                 # Core orchestrator (CSVAnalyzer)
-├── config.py                   # Configuration management
+├── app.py                      # Gradio Web 界面
+├── analyzer.py                 # 核心调度器 (CSVAnalyzer)
+├── config.py                   # 配置管理
 │
-├── llm/                        # LLM abstraction layer
-│   ├── base.py                 # Abstract base class
-│   ├── qwen.py                 # Qwen (通义千问) implementation
-│   ├── openai_llm.py           # OpenAI implementation
-│   └── deepseek.py             # DeepSeek implementation
+├── llm/                        # LLM 抽象层
+│   ├── base.py                 # 抽象基类
+│   ├── qwen.py                 # 通义千问实现
+│   ├── openai_llm.py           # OpenAI 实现
+│   └── deepseek.py             # DeepSeek 实现
 │
-├── core/                       # Core execution components
-│   ├── executor.py             # Sandboxed code executor
-│   ├── error_handler.py        # Error classification & suggestions
-│   └── prompts.py              # Prompt templates
+├── core/                       # 核心执行组件
+│   ├── executor.py             # 沙箱代码执行器
+│   ├── error_handler.py        # 错误分类与建议
+│   └── prompts.py              # 提示词模板
 │
-├── tests/                      # Test suite
-│   ├── test_error_handler.py   # Unit tests for error handling
-│   └── test_error_correction_flow.py  # Integration tests
+├── tests/                      # 测试套件
+│   ├── test_error_handler.py   # 错误处理单元测试
+│   └── test_error_correction_flow.py  # 集成测试
 │
-├── history/                    # Saved conversations (auto-generated)
-├── outputs/                    # Generated figures (auto-generated)
-└── data/                       # Sample CSV files
+├── history/                    # 保存的对话 (自动生成)
+├── outputs/                    # 生成的图表 (自动生成)
+└── data/                       # 示例 CSV 文件
 ```
 
 ---
 
-## How to Run
+## 快速开始
 
-### Prerequisites
+### 环境要求
 
 - Python 3.10+
-- API key for at least one LLM provider
+- 至少一个 LLM 提供商的 API Key
 
-### Installation
+### 安装
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone <repo-url>
 cd CsvDataAnalyzer
 
-# Create virtual environment
+# 创建虚拟环境
 python3 -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+source venv/bin/activate  # Windows: .\venv\Scripts\activate
 
-# Install dependencies
+# 安装依赖
 pip install -r requirements.txt
 
-# Configure API keys
+# 配置 API Key
 cp .env.example .env
-# Edit .env and add your API keys
+# 编辑 .env 文件，填入你的 API Key
 ```
 
-### Configuration
+### 配置
 
-Edit `.env` file:
+编辑 `.env` 文件：
 
 ```bash
-# Required: At least one of these
-DASHSCOPE_API_KEY=your_qwen_key      # For Qwen (通义千问)
-OPENAI_API_KEY=your_openai_key       # For OpenAI
-DEEPSEEK_API_KEY=your_deepseek_key   # For DeepSeek
+# 至少配置其中一个
+DASHSCOPE_API_KEY=your_qwen_key      # 通义千问
+OPENAI_API_KEY=your_openai_key       # OpenAI
+DEEPSEEK_API_KEY=your_deepseek_key   # DeepSeek
 ```
 
-### Run the Application
+### 运行应用
 
 ```bash
 source venv/bin/activate
 python app.py
-# Open http://localhost:7860 in browser
+# 浏览器打开 http://localhost:7860
 ```
 
-### Run Tests
+### 运行测试
 
 ```bash
 source venv/bin/activate
 
-# Unit tests
+# 单元测试
 python -m unittest tests/test_error_handler.py -v
 
-# Integration test (error correction flow)
+# 集成测试（错误纠正流程）
 python tests/test_error_correction_flow.py --fail-count 2
 ```
 
-### Test Error Correction in UI
+### 在 UI 中测试错误纠正
 
-1. Upload a CSV file
-2. Expand "测试模式" (Test Mode) panel
-3. Check "启用错误注入" (Enable Error Injection)
-4. Set failure count (1-2)
-5. Ask any question and watch the error correction process
-
----
-
-## Example Usage
-
-Upload a sales CSV and try these questions:
-
-```
-1. "Show the first 5 rows of data"
-2. "What is the total sales by region?"
-3. "Plot monthly sales trend"
-4. "Which product category has the highest average sales?"
-5. "Compare sales between 2022 and 2023"
-```
-
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Frontend | Gradio 4.x |
-| LLM | Qwen / OpenAI / DeepSeek |
-| Data Processing | Pandas |
-| Visualization | Matplotlib |
-| Configuration | python-dotenv |
+1. 上传一个 CSV 文件
+2. 展开左侧「测试模式」面板
+3. 勾选「启用错误注入」
+4. 设置失败次数（1-2）
+5. 发送任意问题，观察错误纠正过程
 
 ---
 
-## License
+## 使用示例
+
+上传销售数据 CSV，尝试以下问题：
+
+```
+1. 分析 Clothing 随时间变化的总销售额趋势
+2. 对 bikes 进行同样的分析
+3. 哪些年份 components 比 accessories 的总销售额高?
+4. "哪个产品类别的平均销售额最高？"
+5. "对比 2022 和 2023 年的销售情况"
+```
+
+---
+## 技术栈
+
+| 组件 | 技术 |
+|------|------|
+| 前端 | Gradio 4.x |
+| 大模型 | 通义千问 / OpenAI / DeepSeek |
+| 数据处理 | Pandas |
+| 可视化 | Matplotlib |
+| 配置管理 | python-dotenv |
+
+---
+
+## 许可证
 
 MIT
