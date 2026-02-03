@@ -270,6 +270,7 @@ DEEPSEEK_API_KEY=your_deepseek_key   # For DeepSeek
 source venv/bin/activate
 python app.py
 # Open http://localhost:7860 in browser
+# special remind: for windows user, you can't access 0.0.0.0:7860, but 127.0.0.1
 ```
 
 ### Run Tests

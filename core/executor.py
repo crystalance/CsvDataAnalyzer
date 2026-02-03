@@ -83,12 +83,12 @@ class CodeExecutor:
         return text.strip()
 
     def _inject_figure_save(self, code: str, figure_path: Path) -> str:
-        """Inject figure saving code before plt.show() calls."""
-        # Replace plt.show() with save and show
+        """Inject figure saving code and remove plt.show() calls."""
         save_code = f"plt.savefig(r'{figure_path}', dpi=100, bbox_inches='tight')"
 
         if "plt.show()" in code:
-            code = code.replace("plt.show()", f"{save_code}\nplt.show()")
+            # Replace plt.show() with save only (remove show to avoid warning)
+            code = code.replace("plt.show()", save_code)
         elif "plt.figure(" in code or "plt.plot(" in code or "plt.bar(" in code:
             # If there's plotting but no show(), add save at the end
             code = f"{code}\n{save_code}"
