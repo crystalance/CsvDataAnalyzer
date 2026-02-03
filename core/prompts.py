@@ -29,7 +29,12 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个专业的数据分析助手。用户提�
 ERROR_CORRECTION_PROMPT = """代码执行出错:
 {error}
 
+{code_section}
+
+{history_section}
+
 请修正代码，只输出完整的修正后代码（用 ```python 和 ``` 包裹）。
+注意：请仔细分析错误原因，确保修正后的代码能够正确运行。
 """
 
 EXPLANATION_PROMPT = """基于以下代码执行结果，用中文给出简洁的数据分析解释（2-3句话）:
@@ -59,9 +64,25 @@ class PromptBuilder:
         )
 
     @staticmethod
-    def build_error_correction_prompt(error: str) -> str:
+    def build_error_correction_prompt(
+        error: str,
+        code: str = "",
+        conversation_history: str = ""
+    ) -> str:
         """Build the error correction prompt."""
-        return ERROR_CORRECTION_PROMPT.format(error=error)
+        code_section = ""
+        if code:
+            code_section = f"出错的代码:\n```python\n{code}\n```\n"
+        
+        history_section = ""
+        if conversation_history:
+            history_section = f"最近的对话历史:\n{conversation_history}\n"
+        
+        return ERROR_CORRECTION_PROMPT.format(
+            error=error,
+            code_section=code_section,
+            history_section=history_section
+        )
 
     @staticmethod
     def build_explanation_prompt(question: str, result: str) -> str:

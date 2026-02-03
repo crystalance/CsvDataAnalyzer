@@ -70,19 +70,21 @@ def analyze(
     question: str,
     history: list,
     model: str
-) -> tuple[list, str | None, str]:
-    """Process user question and return response."""
+):
+    """Process user question and return response with streaming updates."""
     global analyzer
 
     if not question.strip():
-        return history, None, ""
+        yield history, None, ""
+        return
 
     if analyzer is None:
         history = history + [
             {"role": "user", "content": question},
             {"role": "assistant", "content": "请先上传 CSV 文件"}
         ]
-        return history, None, ""
+        yield history, None, ""
+        return
 
     if model != analyzer.model_name:
         try:
@@ -92,26 +94,69 @@ def analyze(
                 {"role": "user", "content": question},
                 {"role": "assistant", "content": f"切换模型失败: {str(e)}"}
             ]
-            return history, None, ""
+            yield history, None, ""
+            return
 
+    # Add user question to history immediately
+    current_history = history + [{"role": "user", "content": question}]
+    assistant_response = ""
+    
     try:
-        result = analyzer.analyze(question)
-        response = format_response(result)
-
-        history = history + [
-            {"role": "user", "content": question},
-            {"role": "assistant", "content": response}
-        ]
-
-        return history, result.figure_path, ""
+        # Use streaming analysis
+        for update in analyzer.analyze_stream(question):
+            assistant_response += update
+            # Update history with streaming response
+            current_history_with_response = current_history + [
+                {"role": "assistant", "content": assistant_response}
+            ]
+            yield current_history_with_response, None, ""
+        
+        # After streaming is complete, get the final formatted result
+        # The analyze_stream already saved to history, so we can get the result
+        # by calling analyze() which will use cached results, or we format from history
+        # Actually, let's just call analyze() to get the properly formatted result
+        # But this might duplicate LLM calls. Let's check if we can avoid that.
+        
+        # Get the last history item to format final response
+        if analyzer.history and analyzer.history[-1]["question"] == question:
+            last_item = analyzer.history[-1]
+            
+            # Get figure_path from history if available, otherwise try to find latest
+            figure_path = last_item.get("figure_path")
+            if not figure_path:
+                import glob
+                figures = sorted(glob.glob("outputs/figure_*.png"), key=lambda x: Path(x).stat().st_mtime, reverse=True)
+                figure_path = figures[0] if figures else None
+            
+            # Determine if there was an error
+            result_text = last_item.get("result", "")
+            has_error = result_text and ("错误" in result_text or "失败" in result_text or "Error" in result_text)
+            
+            final_result = AnalysisResult(
+                code=last_item.get("code", ""),
+                output=result_text if not has_error else "",
+                figure_path=figure_path,
+                explanation=last_item.get("explanation", ""),
+                error=result_text if has_error else None
+            )
+            
+            final_response = format_response(final_result)
+            
+            # Final update with formatted response
+            final_history = current_history + [
+                {"role": "assistant", "content": final_response}
+            ]
+            yield final_history, figure_path, ""
+        else:
+            # No history saved, just use the streaming response
+            yield current_history, None, ""
 
     except Exception as e:
         error_msg = f"分析失败: {str(e)}"
-        history = history + [
-            {"role": "user", "content": question},
+        final_history = current_history + [
             {"role": "assistant", "content": error_msg}
         ]
-        return history, None, ""
+        yield final_history, None, ""
 
 
 def save_history(history: list) -> gr.update:
