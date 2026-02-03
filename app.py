@@ -235,16 +235,39 @@ def new_conversation() -> tuple[list, None, str, gr.update]:
 def create_app():
     """Create and configure the Gradio app."""
 
-    with gr.Blocks(title="CSV 数据分析系统") as app:
+    with gr.Blocks(title="CSV 数据分析系统", css="""
+        .main-container { margin-top: 10px; align-items: stretch !important; }
+        .left-sidebar {
+            padding-right: 15px;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        .chatbot-container { border-radius: 8px; }
+        .history-section {
+            margin-top: auto !important;
+            padding-top: 12px !important;
+        }
+        .history-section .markdown { margin-bottom: 2px !important; }
+        .history-section .markdown p { margin: 0 !important; font-weight: bold; }
+        .history-list {
+            max-height: 150px !important;
+            overflow-y: auto !important;
+            border: 1px solid #374151 !important;
+            border-radius: 8px !important;
+            padding: 8px !important;
+            background: #1f2937 !important;
+        }
+        .history-list label { margin-bottom: 4px !important; }
+    """) as app:
 
         # ========== Page Header (Full Width) ==========
         gr.Markdown("# CSV 数据分析系统")
         gr.Markdown("上传 CSV 文件，用自然语言提问，AI 自动生成代码分析数据")
 
         # ========== Main Content ==========
-        with gr.Row(equal_height=True):
+        with gr.Row(elem_classes="main-container"):
             # ========== Left Sidebar ==========
-            with gr.Column(scale=1, min_width=250):
+            with gr.Column(scale=1, min_width=280, elem_classes="left-sidebar"):
                 # New chat button
                 new_chat_btn = gr.Button("+ 新建对话", variant="primary", size="lg")
 
@@ -255,18 +278,19 @@ def create_app():
                     file_count="single"
                 )
 
-                # Model and status
-                model_dropdown = gr.Dropdown(
-                    choices=["qwen", "openai", "deepseek"],
-                    value="qwen",
-                    label="模型"
-                )
-                status_text = gr.Textbox(
-                    label="状态",
-                    interactive=False,
-                    value="就绪",
-                    max_lines=1
-                )
+                # Model and status in a group
+                with gr.Group():
+                    model_dropdown = gr.Dropdown(
+                        choices=["qwen", "openai", "deepseek"],
+                        value="qwen",
+                        label="模型"
+                    )
+                    status_text = gr.Textbox(
+                        label="状态",
+                        interactive=False,
+                        value="就绪",
+                        max_lines=1
+                    )
 
                 # CSV preview
                 with gr.Accordion("CSV 预览", open=False):
@@ -274,26 +298,30 @@ def create_app():
                         label="",
                         interactive=False,
                         wrap=True,
-                        max_height=120
+                        max_height=150
                     )
 
-                # History section with taller list
-                gr.Markdown("### 历史对话")
-                history_list = gr.Dropdown(
-                    choices=get_history_files(),
-                    label="",
-                    interactive=True
-                )
-                with gr.Row():
-                    load_btn = gr.Button("加载", size="sm", scale=1)
-                    delete_btn = gr.Button("删除", size="sm", variant="stop", scale=1)
+                # History section - compact layout
+                with gr.Group(elem_classes="history-section"):
+                    gr.Markdown("**历史对话**")
+                    history_list = gr.Radio(
+                        choices=get_history_files(),
+                        label="",
+                        interactive=True,
+                        container=False,
+                        elem_classes="history-list"
+                    )
+                    with gr.Row():
+                        load_btn = gr.Button("加载", size="sm", scale=1)
+                        delete_btn = gr.Button("删除", size="sm", variant="stop", scale=1)
 
             # ========== Right Main Area ==========
             with gr.Column(scale=4):
-                # Chat area
+                # Chat area - full height
                 chatbot = gr.Chatbot(
                     label="",
-                    height=750
+                    height=550,
+                    elem_classes="chatbot-container"
                 )
 
                 # Image output
@@ -301,20 +329,20 @@ def create_app():
                     image_output = gr.Image(
                         label="",
                         type="filepath",
-                        height=280
+                        height=250
                     )
 
-                # Input row
+                # Input area - aligned with left sidebar bottom
                 with gr.Row():
                     question_input = gr.Textbox(
                         placeholder="输入数据分析问题，如：分析各品类的销售趋势",
                         label="",
-                        scale=5,
-                        lines=1
+                        scale=6,
+                        lines=1,
+                        container=False
                     )
-                    with gr.Column(scale=1, min_width=100):
-                        submit_btn = gr.Button("发送", variant="primary")
-                        save_btn = gr.Button("保存对话", variant="primary")
+                    submit_btn = gr.Button("发送", variant="primary", scale=1, min_width=80)
+                    save_btn = gr.Button("保存对话", variant="primary", scale=1, min_width=80)
 
         # ========== Event Handlers ==========
         file_input.change(
