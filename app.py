@@ -222,14 +222,19 @@ def delete_history(filename: str) -> gr.update:
         return gr.update()
 
 
-def new_conversation() -> tuple[list, None, str, gr.update]:
-    """Start a new conversation."""
+def new_conversation(history: list) -> tuple[list, None, str, gr.update]:
+    """Start a new conversation, auto-save current history if exists."""
     global analyzer
+
+    # Auto-save current conversation before starting new one
+    if history:
+        save_history(history)
 
     if analyzer:
         analyzer.new_conversation()
 
-    return [], None, "", gr.update(value=None)
+    # Refresh history list with updated choices
+    return [], None, "", gr.update(choices=get_history_files(), value=None)
 
 
 def set_test_mode(enabled: bool, fail_count: int) -> str:
@@ -367,12 +372,11 @@ def create_app():
                     question_input = gr.Textbox(
                         placeholder="输入数据分析问题，如：分析各品类的销售趋势",
                         label="",
-                        scale=6,
+                        scale=7,
                         lines=1,
                         container=False
                     )
                     submit_btn = gr.Button("发送", variant="primary", scale=1, min_width=80)
-                    save_btn = gr.Button("保存对话", variant="primary", scale=1, min_width=80)
 
         # ========== Event Handlers ==========
         file_input.change(
@@ -414,14 +418,8 @@ def create_app():
 
         new_chat_btn.click(
             fn=new_conversation,
-            inputs=[],
-            outputs=[chatbot, image_output, question_input, history_list]
-        )
-
-        save_btn.click(
-            fn=save_history,
             inputs=[chatbot],
-            outputs=[history_list]
+            outputs=[chatbot, image_output, question_input, history_list]
         )
 
         load_btn.click(
